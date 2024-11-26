@@ -1,0 +1,132 @@
+name: 1.0 📗Create a Feature Branch
+run-name: 📗Create A Feature Branch (${{ github.event.inputs.branch-owner }}-${{ github.event.inputs.branch-suffix }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      information:
+        type: choice
+        description: "📝This workflow will create a feature branch from the 'develop' branch. The new feature branch name will be 'Branch Owner'-'Branch Suffix'. The selected value for 'Use workflow from' is inconsequential."
+        required: false
+        default: "OK"
+        options:
+        - OK
+
+      branch-owner:
+        description: 'Branch Owner (Must be a valid User ID, if left blank your GitHub ID will be used)'
+        required: false
+        type: string
+
+      branch-suffix:
+        description: 'Branch suffix? (Jira # Recommended, ex: AWCSDM-34)'
+        required: true
+        type: string
+
+jobs:
+  Create-Feature-Branch:
+    runs-on: sw-ubuntu-awcs
+
+    env:
+      GHS_AWCSDEV_USERNAME: ${{ secrets.AWCSDEV_USERNAME }}
+      GHS_AWCSDEV_PASSWORD: ${{ secrets.AWCSDEV_PASSWORD }}
+      GHS_AWCS_INSTALL_USERNAME: ${{ secrets.AWCS_INSTALL_USERNAME }}
+      GHS_AWCS_INSTALL_PASSWORD: ${{ secrets.AWCS_INSTALL_PASSWORD }}
+      GHS_HISTORY_USERNAME: ${{ secrets.HISTORY_USERNAME }}
+      GHS_HISTORY_PASSWORD: ${{ secrets.HISTORY_PASSWORD }}
+      GHS_APEX_AWCS_USERNAME: ${{ secrets.APEX_AWCS_USERNAME }}
+      GHS_APEX_AWCS_PASSWORD: ${{ secrets.APEX_AWCS_PASSWORD }}
+      GHS_AWCS_RSYNC_ACCOUNT: ${{ secrets.AWCS_RSYNC_ACCOUNT }}
+      GHS_SA_AWCSRSYNC_PRIVKEY_64: ${{ secrets.SA_AWCSRSYNC_PRIVKEY_64 }}
+      GHS_GITHUB_TOKEN: ${{ github.token }}
+      GHS_ARTIFACTORY_API_KEY: ${{ secrets.ARTIFACTORY_API_KEY }}
+
+    container:
+      image: ${{ vars.DOCKER_CONTAINER }}
+
+      volumes:
+         - ${{github.WORKSPACE}}:/sqlcl
+
+    steps:
+
+      - name: Determine which branch of the release tooling repo to use
+        run: |
+          #Determine which branch of the release tooling repo to use
+          listOfWhoIsDoingToolingDevelopment="${{ vars.WHO_IS_DOING_TOOLING_DEVELOPMENT }}"
+
+          whoToLookFor=${GITHUB_ACTOR}
+          echo "Checking to see if $whoToLookFor is in the REPO variable"
+
+          echo
+          echo "REPO variable is currently set to:"
+          echo "--------------------------------------------------------"
+          echo "$listOfWhoIsDoingToolingDevelopment"
+          echo "--------------------------------------------------------"
+          echo
+          echo "--- RESULTS ---"
+
+          branchToUse="main"
+          #always default to the main branch
+
+          listOfWhoIsDoingToolingDevelopment=$(echo "$listOfWhoIsDoingToolingDevelopment" | tr -d ' ')
+          if [[ "$listOfWhoIsDoingToolingDevelopment" == *"$whoToLookFor""="* ]]; then
+             whoToLookFor="$whoToLookFor="
+             branchToUse=${listOfWhoIsDoingToolingDevelopment##*$whoToLookFor}
+             if [[ "$branchToUse" == *$'\n'* ]]; then    # if the branch name has any more data after the match (denoted by the linefeed)
+                branchToUse=${branchToUse%%$'\n'*}       # grab only the data between the start of the string and the linefeed
+             fi
+          else
+             echo "GiTHub ID $whoToLookFor is not the REPO variable"
+          fi
+          branchToUse=$(echo "$branchToUse" | tr -d '\r')
+          branchToUse=$(echo "$branchToUse" | tr -d '\n')
+
+          echo "Using : [$branchToUse]"
+          echo "tooling-ref=$branchToUse" >> "$GITHUB_ENV"
+
+      - name: Checkout the AWCS Release Tooling REPO ( ${{ env.tooling-ref }} )
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ env.tooling-ref }}
+          repository: sherwin-williams-co/AWCS_RELEASE_TOOLING
+          token:  ${{ secrets.SA_DIGITALIT_DSS_TOKEN }}
+          path: ./AWCS_RELEASE_TOOLING
+
+      - name: Give the AWCS Release Tooling Clone Execute Rights
+        run: |
+          chmod +x "$GITHUB_WORKSPACE"/AWCS_RELEASE_TOOLING/BashScripts/*.sh
+
+      - name: Obtain GitHub Process Lock (BRANCH CREATION)
+        id: process-lock
+        run: |
+          echo "got-lock=0" >> "$GITHUB_ENV"
+          "$GITHUB_WORKSPACE/AWCS_RELEASE_TOOLING/BashScripts/ProcessLock.sh" -p "BRANCH CREATION"
+          echo "got-lock=1" >> "$GITHUB_ENV"
+
+      - name: Checkout the AWCS REPO (develop)
+        uses: actions/checkout@v3
+        with:
+          path: ./AWCS_REPO
+          ref: "develop"
+          fetch-depth: 0
+          token: ${{ secrets.SA_DIGITALIT_DSS_TOKEN }}
+
+      - name: Check Action Runner (AWCS_REPO) to Confirm Proper Setup
+        run: $GITHUB_WORKSPACE/AWCS_RELEASE_TOOLING/BashScripts/RunnerCheck.sh -r "AWCS_REPO"
+
+      - name: Execute MakeBranch.sh in the AWCS_RELEASE_TOOLING Repository
+        run: |
+
+          "$GITHUB_WORKSPACE/AWCS_RELEASE_TOOLING/BashScripts/MakeBranch.sh"  \
+          -u "${{ github.event.inputs.branch-owner }}" \
+          -s "${{ github.event.inputs.branch-suffix }}" \
+          -t "FEATURE"
+
+      - name: Release GitHub Process Lock (BRANCH CREATION)
+        if: always()
+        run: |
+          # RELEASE THE LOCK IF ONE WAS OBTAINED
+          if [ "${{ env.got-lock }}" == "1" ]; then
+            "$GITHUB_WORKSPACE/AWCS_RELEASE_TOOLING/BashScripts/ProcessLock.sh" -p "BRANCH CREATION" -r "Release"
+          else
+            echo "NO LOCK OBTAINED, NO LOCK TO RELEASE"
+          fi
