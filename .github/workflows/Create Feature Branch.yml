@@ -18,13 +18,13 @@ on:
         type: string
 
       branch-suffix:
-        description: 'Branch suffix? (Jira # Recommended, ex: AWCSDM-34)'
+        description: 'Branch suffix? (Jira # Recommended, ex: DRE-34)'
         required: true
         type: string
 
 jobs:
   Create-Feature-Branch:
-    runs-on: sw-ubuntu-awcs
+    runs-on: sw-ubuntu
 
     env:
       GHS_AWCSDEV_USERNAME: ${{ secrets.AWCSDEV_USERNAME }}
