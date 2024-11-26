@@ -1,0 +1,21 @@
+name: ghs
+
+on:
+    push:
+        paths: 
+            - ".github/workflows/ghs.yml"
+    workflow_dispatch: # manual
+    
+
+jobs:
+    cli:
+        runs-on: ubutun-latest
+        steps:
+            - run: env
+            - run: gh --version
+            - run: gh auth status
+            - run: gh repo list
+            - run: gh workflow list 
+            - run: api /repos/:owner/:repo/actions/workflow
+
+    
