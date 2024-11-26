@@ -9,8 +9,11 @@ on:
 
 jobs:
     cli:
-        runs-on: ubutun-latest
+        runs-on: ubuntu-latest
+        env:
+            gh_token: ${{ secrets.GITHUB_TOKEN}}
         steps:
+            - uses: actions/checkout@v4
             - run: env
             - run: gh --version
             - run: gh auth status
